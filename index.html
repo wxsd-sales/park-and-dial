@@ -1224,9 +1224,19 @@
             await parkCall(callId, ext);
             console.log('Call parked successfully');
 
-            // Wait 5 seconds before dialing
-            updateModal('Call Parked', `Call parked successfully. Waiting 5 seconds before dialing...`);
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            // Wait 2 seconds for park to settle
+            updateModal('Call Parked', `Call parked successfully. Preparing to dial...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // Verify call is no longer active before dialing
+            updateModal('Verifying...', `Verifying call is parked...`);
+            const currentCalls = await getActiveCalls();
+            const stillActive = currentCalls.find(c => c.id === callId);
+            
+            if (stillActive) {
+                console.log('Original call still showing as active, waiting a bit longer...');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
 
             // Step 3: Dial the extension
             updateModal('Dialing...', `Now dialing <strong>${name}</strong> at extension <strong>${ext}</strong>...`);
