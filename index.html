@@ -1224,6 +1224,10 @@
             await parkCall(callId, ext);
             console.log('Call parked successfully');
 
+            // Wait 5 seconds before dialing
+            updateModal('Call Parked', `Call parked successfully. Waiting 5 seconds before dialing...`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
             // Step 3: Dial the extension
             updateModal('Dialing...', `Now dialing <strong>${name}</strong> at extension <strong>${ext}</strong>...`);
             
