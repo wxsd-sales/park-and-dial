@@ -790,11 +790,186 @@
         renderContacts(filtered);
     }
 
-    function handleParkDial(name, ext) {
+    // ============================================
+    // WEBEX CALLING API FUNCTIONS
+    // ============================================
+
+    /**
+     * Get active calls for the user
+     * Returns: Array of active calls
+     */
+    async function getActiveCalls() {
+        const token = getAccessToken();
+        
+        try {
+            const response = await fetch('https://webexapis.com/v1/telephony/calls', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Failed to get calls: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json();
+            return data.items || [];
+        } catch (error) {
+            console.error('Error getting active calls:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Park a call to a specific extension
+     * @param {string} callId - The ID of the call to park
+     * @param {string} destination - The extension to park the call to
+     */
+    async function parkCall(callId, destination) {
+        const token = getAccessToken();
+        
+        try {
+            const response = await fetch('https://webexapis.com/v1/telephony/calls/park', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    callId: callId,
+                    destination: destination
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Failed to park call: ${response.status} - ${errorText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Error parking call:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Dial a new call to an extension
+     * @param {string} destination - The extension to dial
+     */
+    async function dialCall(destination) {
+        const token = getAccessToken();
+        
+        try {
+            const response = await fetch('https://webexapis.com/v1/telephony/calls/dial', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    destination: destination
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Failed to dial: ${response.status} - ${errorText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Error dialing call:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Update modal with status message
+     */
+    function updateModal(title, message, isError = false) {
         const modal = document.getElementById('modalOverlay');
+        const modalTitle = modal.querySelector('h3');
         const modalText = document.getElementById('modalText');
-        modalText.innerHTML = `Your current call is being <strong>parked</strong>.<br><br>Now dialing <strong>${name}</strong> at extension <strong>${ext}</strong>...`;
+        
+        modalTitle.textContent = title;
+        modalText.innerHTML = message;
+        
+        if (isError) {
+            modalText.style.color = '#dc3545';
+        } else {
+            modalText.style.color = '#333';
+        }
+        
         modal.style.display = 'flex';
+    }
+
+    /**
+     * Handle Park & Dial action
+     * Main orchestration function for the park and dial workflow
+     */
+    async function handleParkDial(name, ext) {
+        updateModal('Processing...', 'Checking for active calls...');
+
+        try {
+            // Step 1: Get active calls
+            const calls = await getActiveCalls();
+            
+            // Find a connected call
+            const connectedCall = calls.find(call => call.state === 'connected');
+            
+            if (!connectedCall) {
+                updateModal(
+                    '❌ No Active Call',
+                    'You must be on an active call to use Park & Dial.<br><br>Please start a call and try again.',
+                    true
+                );
+                return;
+            }
+
+            const callId = connectedCall.id;
+            console.log('Found connected call:', callId);
+
+            // Step 2: Park the call
+            updateModal('Parking Call...', `Parking your current call to extension <strong>${ext}</strong>...`);
+            
+            await parkCall(callId, ext);
+            console.log('Call parked successfully');
+
+            // Step 3: Dial the extension
+            updateModal('Dialing...', `Now dialing <strong>${name}</strong> at extension <strong>${ext}</strong>...`);
+            
+            await dialCall(ext);
+            console.log('Dial initiated successfully');
+
+            // Success!
+            updateModal(
+                '✅ Success!',
+                `Call parked and now dialing <strong>${name}</strong> at extension <strong>${ext}</strong>.<br><br>Your previous call is parked and waiting.`
+            );
+
+        } catch (error) {
+            console.error('Park & Dial failed:', error);
+            
+            // Show user-friendly error
+            let errorMessage = error.message;
+            if (errorMessage.includes('401')) {
+                errorMessage = 'Authentication failed. Please try logging out and back in.';
+            } else if (errorMessage.includes('403')) {
+                errorMessage = 'Permission denied. You may not have the required Webex Calling license.';
+            } else if (errorMessage.includes('404')) {
+                errorMessage = 'Resource not found. The extension may be invalid.';
+            }
+            
+            updateModal(
+                '❌ Error',
+                `Failed to complete Park & Dial:<br><br><strong>${errorMessage}</strong><br><br>Please check the console for details.`,
+                true
+            );
+        }
     }
 
     function closeModal() {
