@@ -1224,31 +1224,39 @@
             await parkCall(callId, ext);
             console.log('Call parked successfully');
 
-            // Wait 2 seconds initial delay for park to settle
-            updateModal('Call Parked', `Call parked successfully. Preparing to dial...`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            // Check if we need to wait for endpoint to clear
+            const selectedEndpoint = getSelectedEndpoint();
+            const needsWait = selectedEndpoint && selectedEndpoint.id !== 'none';
 
-            // Poll to verify call is no longer active (max 8 more seconds)
-            updateModal('Verifying...', `Verifying call is parked...`);
-            const maxAttempts = 16; // 16 * 500ms = 8 seconds
-            let callCleared = false;
-            
-            for (let i = 0; i < maxAttempts; i++) {
-                const currentCalls = await getActiveCalls();
-                const stillActive = currentCalls.find(c => c.id === callId);
+            if (needsWait) {
+                // Wait 2 seconds initial delay for park to settle
+                updateModal('Call Parked', `Call parked successfully. Preparing to dial...`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Poll to verify call is no longer active (max 5 more seconds)
+                updateModal('Verifying...', `Verifying call is parked...`);
+                const maxAttempts = 5; // 5 seconds
+                let callCleared = false;
                 
-                if (!stillActive) {
-                    console.log(`Call cleared from endpoint after ${2 + (i * 0.5)} seconds total`);
-                    callCleared = true;
-                    break;
+                for (let i = 0; i < maxAttempts; i++) {
+                    const currentCalls = await getActiveCalls();
+                    const stillActive = currentCalls.find(c => c.id === callId);
+                    
+                    if (!stillActive) {
+                        console.log(`Call cleared from endpoint after ${2 + i} seconds total`);
+                        callCleared = true;
+                        break;
+                    }
+                    
+                    console.log(`Attempt ${i + 1}: Call still active, waiting...`);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 }
                 
-                console.log(`Attempt ${i + 1}: Call still active, waiting...`);
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
-            
-            if (!callCleared) {
-                console.warn('Call still showing as active after timeout, proceeding anyway');
+                if (!callCleared) {
+                    console.warn('Call still showing as active after timeout, proceeding anyway');
+                }
+            } else {
+                console.log('No specific endpoint selected, skipping wait');
             }
 
             // Step 3: Dial the extension
