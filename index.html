@@ -334,6 +334,75 @@
         .copy-feedback.show {
             opacity: 1;
         }
+
+        /* Endpoint Selection */
+        .endpoint-selector {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .endpoint-selector label {
+            font-weight: 500;
+            color: #856404;
+            font-size: 14px;
+        }
+
+        .endpoint-selector select {
+            padding: 8px;
+            border: 1px solid #ffc107;
+            border-radius: 4px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+
+        .endpoint-selector button {
+            background: #ffc107;
+            color: #856404;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            align-self: flex-start;
+        }
+
+        .endpoint-selector button:hover {
+            background: #e0a800;
+        }
+
+        .endpoint-info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #0c5460;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .endpoint-info .change-btn {
+            background: #17a2b8;
+            color: white;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .endpoint-info .change-btn:hover {
+            background: #138496;
+        }
     </style>
 </head>
 <body>
@@ -351,6 +420,21 @@
         <div id="userInfo" class="user-info hidden">
             <span class="user-name" id="userName">Loading...</span>
             <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+
+        <!-- Endpoint Selection Prompt (shown when user needs to select) -->
+        <div id="endpointSelector" class="endpoint-selector hidden">
+            <label>📞 Select Your Dial Endpoint:</label>
+            <select id="endpointSelect">
+                <option value="">Loading...</option>
+            </select>
+            <button onclick="saveSelectedEndpoint()">Save Selection</button>
+        </div>
+
+        <!-- Endpoint Info (shown when endpoint is already selected) -->
+        <div id="endpointInfo" class="endpoint-info hidden">
+            <span>📞 Dialing from: <strong id="selectedEndpointName">None</strong></span>
+            <button class="change-btn" onclick="showEndpointSelector()">Change</button>
         </div>
 
         <h2>Internal Directory</h2>
@@ -558,6 +642,9 @@
                 document.getElementById('userInfo').classList.remove('hidden');
                 localStorage.setItem('webex_user_name', userName);
             }
+
+            // Initialize preferred answer endpoints
+            await initializeEndpoints();
 
             // Render contacts
             renderContacts(contacts);
@@ -791,6 +878,192 @@
     }
 
     // ============================================
+    // PREFERRED ANSWER ENDPOINT MANAGEMENT
+    // ============================================
+
+    // Store available endpoints globally
+    let availableEndpoints = [];
+
+    /**
+     * Fetch available preferred answer endpoints
+     */
+    async function fetchAvailableEndpoints() {
+        const token = getAccessToken();
+        
+        try {
+            const response = await fetch('https://webexapis.com/v1/telephony/config/people/me/settings/availablePreferredAnswerEndpoints', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch endpoints: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.endpoints || [];
+        } catch (error) {
+            console.error('Error fetching endpoints:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Get selected endpoint from localStorage
+     */
+    function getSelectedEndpoint() {
+        const stored = localStorage.getItem('selected_endpoint');
+        if (stored) {
+            try {
+                return JSON.parse(stored);
+            } catch (e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Save selected endpoint to localStorage
+     */
+    function saveEndpointToStorage(endpoint) {
+        if (endpoint) {
+            localStorage.setItem('selected_endpoint', JSON.stringify(endpoint));
+        } else {
+            localStorage.removeItem('selected_endpoint');
+        }
+    }
+
+    /**
+     * Check if stored endpoint is still valid in current endpoint list
+     */
+    function isEndpointStillValid(storedEndpoint, currentEndpoints) {
+        if (!storedEndpoint || storedEndpoint.id === 'none') {
+            return true; // "None" is always valid
+        }
+        
+        return currentEndpoints.some(ep => ep.id === storedEndpoint.id);
+    }
+
+    /**
+     * Populate endpoint selector dropdown
+     */
+    function populateEndpointSelector(endpoints) {
+        const select = document.getElementById('endpointSelect');
+        select.innerHTML = '<option value="none">None</option>';
+        
+        endpoints.forEach(endpoint => {
+            const option = document.createElement('option');
+            option.value = endpoint.id;
+            option.textContent = endpoint.name;
+            select.appendChild(option);
+        });
+    }
+
+    /**
+     * Show endpoint selector UI
+     */
+    function showEndpointSelector() {
+        document.getElementById('endpointSelector').classList.remove('hidden');
+        document.getElementById('endpointInfo').classList.add('hidden');
+        populateEndpointSelector(availableEndpoints);
+        
+        // Pre-select currently selected endpoint if valid
+        const selected = getSelectedEndpoint();
+        if (selected) {
+            document.getElementById('endpointSelect').value = selected.id;
+        }
+    }
+
+    /**
+     * Hide endpoint selector UI
+     */
+    function hideEndpointSelector() {
+        document.getElementById('endpointSelector').classList.add('hidden');
+    }
+
+    /**
+     * Update endpoint info display
+     */
+    function updateEndpointInfo(endpoint) {
+        const infoDiv = document.getElementById('endpointInfo');
+        const nameSpan = document.getElementById('selectedEndpointName');
+        
+        if (endpoint && endpoint.id !== 'none') {
+            nameSpan.textContent = endpoint.name;
+            infoDiv.classList.remove('hidden');
+        } else {
+            nameSpan.textContent = 'None';
+            infoDiv.classList.remove('hidden');
+        }
+    }
+
+    /**
+     * Save selected endpoint (called when user clicks Save button)
+     */
+    function saveSelectedEndpoint() {
+        const select = document.getElementById('endpointSelect');
+        const selectedId = select.value;
+        
+        let endpoint;
+        if (selectedId === 'none') {
+            endpoint = { id: 'none', name: 'None' };
+        } else {
+            const found = availableEndpoints.find(ep => ep.id === selectedId);
+            if (!found) {
+                alert('Invalid endpoint selected');
+                return;
+            }
+            endpoint = { id: found.id, name: found.name, type: found.type };
+        }
+        
+        saveEndpointToStorage(endpoint);
+        hideEndpointSelector();
+        updateEndpointInfo(endpoint);
+        
+        console.log('Endpoint saved:', endpoint);
+    }
+
+    /**
+     * Initialize endpoints on app load
+     * Returns: true if user has valid endpoint, false if needs to select
+     */
+    async function initializeEndpoints() {
+        // Fetch available endpoints
+        availableEndpoints = await fetchAvailableEndpoints();
+        console.log('Available endpoints:', availableEndpoints);
+        
+        // If no endpoints available, store "none" and return
+        if (availableEndpoints.length === 0) {
+            saveEndpointToStorage({ id: 'none', name: 'None' });
+            return true;
+        }
+        
+        // Check if user has previously selected an endpoint
+        const storedEndpoint = getSelectedEndpoint();
+        
+        // If no stored endpoint, prompt user to select
+        if (!storedEndpoint) {
+            showEndpointSelector();
+            return false;
+        }
+        
+        // If stored endpoint is still valid, use it
+        if (isEndpointStillValid(storedEndpoint, availableEndpoints)) {
+            updateEndpointInfo(storedEndpoint);
+            return true;
+        }
+        
+        // Stored endpoint is no longer valid, prompt user to select again
+        console.log('Previously selected endpoint is no longer available');
+        showEndpointSelector();
+        return false;
+    }
+
+    // ============================================
     // WEBEX CALLING API FUNCTIONS
     // ============================================
 
@@ -863,6 +1136,20 @@
     async function dialCall(destination) {
         const token = getAccessToken();
         
+        // Get selected endpoint
+        const selectedEndpoint = getSelectedEndpoint();
+        
+        // Build request body
+        const body = { destination: destination };
+        
+        // Include endpointId if user has selected an endpoint (and it's not "none")
+        if (selectedEndpoint && selectedEndpoint.id !== 'none') {
+            body.endpointId = selectedEndpoint.id;
+            console.log('Dialing with endpoint:', selectedEndpoint.name);
+        } else {
+            console.log('Dialing without specific endpoint');
+        }
+        
         try {
             const response = await fetch('https://webexapis.com/v1/telephony/calls/dial', {
                 method: 'POST',
@@ -870,9 +1157,7 @@
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    destination: destination
-                })
+                body: JSON.stringify(body)
             });
 
             if (!response.ok) {
