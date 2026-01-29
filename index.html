@@ -192,6 +192,148 @@
         .hidden {
             display: none !important;
         }
+
+        /* Settings Button */
+        .settings-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--primary-blue);
+            color: white;
+            border: none;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 24px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transition: all 0.3s;
+            z-index: 999;
+        }
+
+        .settings-btn:hover {
+            background: var(--hover-blue);
+            transform: scale(1.1);
+        }
+
+        /* Settings Modal */
+        .settings-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1001;
+        }
+
+        .settings-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+
+        .settings-content h3 {
+            margin-top: 0;
+            color: var(--text-dark);
+        }
+
+        .settings-content textarea {
+            width: 100%;
+            min-height: 300px;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            box-sizing: border-box;
+            resize: vertical;
+        }
+
+        .settings-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .settings-actions button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-save {
+            background: #28a745;
+            color: white;
+            flex: 1;
+        }
+
+        .btn-save:hover {
+            background: #218838;
+        }
+
+        .btn-cancel {
+            background: #6c757d;
+            color: white;
+            flex: 1;
+        }
+
+        .btn-cancel:hover {
+            background: #5a6268;
+        }
+
+        .btn-copy {
+            background: var(--primary-blue);
+            color: white;
+            flex: 1;
+        }
+
+        .btn-copy:hover {
+            background: var(--hover-blue);
+        }
+
+        .btn-reset {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-reset:hover {
+            background: #c82333;
+        }
+
+        .settings-help {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .copy-feedback {
+            display: inline-block;
+            margin-left: 10px;
+            color: #28a745;
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .copy-feedback.show {
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -226,6 +368,36 @@
         <button class="close-btn" onclick="closeModal()">Close</button>
     </div>
 </div>
+
+<!-- Settings Modal -->
+<div id="settingsModal" class="settings-modal">
+    <div class="settings-content">
+        <h3>⚙️ Configure Contacts</h3>
+        
+        <div class="settings-help">
+            <strong>How to use:</strong><br>
+            • Edit the JSON below to add/remove contacts<br>
+            • Each contact needs a "name" and "ext" (extension)<br>
+            • Click "Save" to store in your browser<br>
+            • Use "Copy Shareable URL" to share this config with others
+        </div>
+
+        <textarea id="contactsEditor" spellcheck="false"></textarea>
+
+        <div class="settings-actions">
+            <button class="btn-save" onclick="saveContacts()">💾 Save</button>
+            <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
+            <button class="btn-copy" onclick="copyShareableUrl()">🔗 Copy Shareable URL</button>
+            <button class="btn-reset" onclick="resetToDefaults()">↺ Reset to Defaults</button>
+        </div>
+        <span id="copyFeedback" class="copy-feedback">✓ Copied!</span>
+    </div>
+</div>
+
+<!-- Settings Button (only show when authenticated) -->
+<button id="settingsBtn" class="settings-btn hidden" onclick="openSettings()" title="Configure Contacts">
+    ⚙️
+</button>
 
 <script>
     // ============================================
@@ -363,6 +535,9 @@
      * Initialize the app - check auth state and show appropriate view
      */
     async function initializeApp() {
+        // Initialize contacts first (from URL params, localStorage, or defaults)
+        initializeContacts();
+
         // Check if we're returning from OAuth
         const hasNewToken = handleOAuthCallback();
 
@@ -371,6 +546,9 @@
             // Show app view
             document.getElementById('loginView').classList.add('hidden');
             document.getElementById('appView').classList.remove('hidden');
+            
+            // Show settings button
+            document.getElementById('settingsBtn').classList.remove('hidden');
             
             // Fetch and display user info
             const user = await fetchUserProfile();
@@ -387,15 +565,18 @@
             // Show login view
             document.getElementById('loginView').classList.remove('hidden');
             document.getElementById('appView').classList.add('hidden');
+            
+            // Hide settings button
+            document.getElementById('settingsBtn').classList.add('hidden');
         }
     }
 
     // ============================================
-    // CONTACT DIRECTORY
+    // CONTACT MANAGEMENT
     // ============================================
     
-    // Fixed contact list
-    const contacts = [
+    // Default contact list (fallback)
+    const DEFAULT_CONTACTS = [
         { name: "David Brown", ext: "2341" },
         { name: "Elizabeth Garcia", ext: "3892" },
         { name: "James Miller", ext: "1847" },
@@ -407,6 +588,189 @@
         { name: "Patricia Martinez", ext: "6134" },
         { name: "Robert Smith", ext: "1592" }
     ];
+
+    // Active contacts list (loaded from URL params, localStorage, or defaults)
+    let contacts = [];
+
+    /**
+     * Load contacts from URL parameters
+     * Format: ?contacts=base64EncodedJSON
+     */
+    function loadContactsFromUrl() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const contactsParam = urlParams.get('contacts');
+        
+        if (contactsParam) {
+            try {
+                const decoded = atob(contactsParam);
+                const parsed = JSON.parse(decoded);
+                
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    console.log('Loaded contacts from URL parameters');
+                    return parsed;
+                }
+            } catch (e) {
+                console.error('Failed to parse contacts from URL:', e);
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Load contacts from localStorage
+     */
+    function loadContactsFromStorage() {
+        const stored = localStorage.getItem('custom_contacts');
+        
+        if (stored) {
+            try {
+                const parsed = JSON.parse(stored);
+                
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    console.log('Loaded contacts from localStorage');
+                    return parsed;
+                }
+            } catch (e) {
+                console.error('Failed to parse contacts from localStorage:', e);
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Initialize contacts (priority: URL > localStorage > defaults)
+     */
+    function initializeContacts() {
+        contacts = loadContactsFromUrl() || loadContactsFromStorage() || DEFAULT_CONTACTS;
+        console.log(`Initialized with ${contacts.length} contacts`);
+    }
+
+    /**
+     * Save contacts to localStorage
+     */
+    function saveContactsToStorage(contactsList) {
+        try {
+            localStorage.setItem('custom_contacts', JSON.stringify(contactsList));
+            return true;
+        } catch (e) {
+            console.error('Failed to save contacts:', e);
+            return false;
+        }
+    }
+
+    /**
+     * Generate shareable URL with contacts encoded
+     */
+    function generateShareableUrl(contactsList) {
+        const encoded = btoa(JSON.stringify(contactsList));
+        const baseUrl = window.location.origin + window.location.pathname;
+        return `${baseUrl}?contacts=${encoded}`;
+    }
+
+    // ============================================
+    // SETTINGS MODAL FUNCTIONS
+    // ============================================
+
+    /**
+     * Open settings modal
+     */
+    function openSettings() {
+        const editor = document.getElementById('contactsEditor');
+        editor.value = JSON.stringify(contacts, null, 2);
+        document.getElementById('settingsModal').style.display = 'flex';
+    }
+
+    /**
+     * Close settings modal
+     */
+    function closeSettings() {
+        document.getElementById('settingsModal').style.display = 'none';
+        document.getElementById('copyFeedback').classList.remove('show');
+    }
+
+    /**
+     * Save contacts from editor
+     */
+    function saveContacts() {
+        const editor = document.getElementById('contactsEditor');
+        
+        try {
+            const parsed = JSON.parse(editor.value);
+            
+            // Validate structure
+            if (!Array.isArray(parsed)) {
+                alert('Error: Contacts must be an array');
+                return;
+            }
+            
+            if (parsed.length === 0) {
+                alert('Error: Please add at least one contact');
+                return;
+            }
+            
+            // Validate each contact has name and ext
+            for (let i = 0; i < parsed.length; i++) {
+                const contact = parsed[i];
+                if (!contact.name || !contact.ext) {
+                    alert(`Error: Contact ${i + 1} is missing "name" or "ext" field`);
+                    return;
+                }
+            }
+            
+            // Save to localStorage
+            if (saveContactsToStorage(parsed)) {
+                contacts = parsed;
+                renderContacts(contacts);
+                closeSettings();
+                alert('✓ Contacts saved successfully!');
+            } else {
+                alert('Error: Failed to save contacts');
+            }
+            
+        } catch (e) {
+            alert('Error: Invalid JSON format\n\n' + e.message);
+        }
+    }
+
+    /**
+     * Copy shareable URL to clipboard
+     */
+    async function copyShareableUrl() {
+        const editor = document.getElementById('contactsEditor');
+        
+        try {
+            // Try to parse current editor content
+            const parsed = JSON.parse(editor.value);
+            const url = generateShareableUrl(parsed);
+            
+            // Copy to clipboard
+            await navigator.clipboard.writeText(url);
+            
+            // Show feedback
+            const feedback = document.getElementById('copyFeedback');
+            feedback.classList.add('show');
+            setTimeout(() => feedback.classList.remove('show'), 2000);
+            
+        } catch (e) {
+            alert('Error: Please fix JSON errors before copying URL\n\n' + e.message);
+        }
+    }
+
+    /**
+     * Reset to default contacts
+     */
+    function resetToDefaults() {
+        if (confirm('Reset to default contacts? This will discard your custom list.')) {
+            const editor = document.getElementById('contactsEditor');
+            editor.value = JSON.stringify(DEFAULT_CONTACTS, null, 2);
+        }
+    }
+
+    // ============================================
+    // CONTACT DIRECTORY
+    // ============================================
 
     const contactListUI = document.getElementById('contactList');
 
@@ -445,11 +809,17 @@
         document.getElementById('modalOverlay').style.display = 'none';
     }
 
-    // Close modal when clicking outside of it
+    // Close modals when clicking outside of them
     window.onclick = function(event) {
         const modal = document.getElementById('modalOverlay');
+        const settingsModal = document.getElementById('settingsModal');
+        
         if (event.target == modal) {
             closeModal();
+        }
+        
+        if (event.target == settingsModal) {
+            closeSettings();
         }
     }
 
