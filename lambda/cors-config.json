@@ -1,0 +1,7 @@
+{
+  "AllowOrigins": ["https://wxsd-sales.github.io"],
+  "AllowMethods": ["*"],
+  "AllowHeaders": ["Content-Type"],
+  "MaxAge": 86400
+}
+

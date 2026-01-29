@@ -1,0 +1,12 @@
+{
+  "name": "park-and-dial-oauth",
+  "version": "1.0.0",
+  "description": "AWS Lambda function for Webex OAuth",
+  "main": "oauth-handler.js",
+  "scripts": {
+    "package": "zip -r lambda-function.zip oauth-handler.js package.json"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
+
